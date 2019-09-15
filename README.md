@@ -132,10 +132,11 @@ Or view [platform specific installation instructions][docs.installation].
 | [**`json_parser`**][docs.json_parser_transform] | Accepts [`log`][docs.log_event] events and allows you to parse a field value as JSON. |
 | [**`log_to_metric`**][docs.log_to_metric_transform] | Accepts [`log`][docs.log_event] events and allows you to convert logs into one or more metrics. |
 | [**`lua`**][docs.lua_transform] | Accepts [`log`][docs.log_event] events and allows you to transform events with a full embedded [Lua][url.lua] engine. |
-| [**`regex_parser`**][docs.regex_parser_transform] | Accepts [`log`][docs.log_event] events and allows you to parse a field's value with a [Regular Expression][url.regex]. |
-| [**`remove_fields`**][docs.remove_fields_transform] | Accepts [`log`][docs.log_event] and [`metric`][docs.metric_event] events and allows you to remove one or more event fields. |
+| [**`regex_parser`**][docs.regex_parser_transform] | Accepts [`log`][docs.log_event] events and allows you to parse a log field's value with a [Regular Expression][url.regex]. |
+| [**`remove_fields`**][docs.remove_fields_transform] | Accepts [`log`][docs.log_event] events and allows you to remove one or more log fields. |
+| [**`remove_tags`**][docs.remove_tags_transform] | Accepts [`metric`][docs.metric_event] events and allows you to remove one or more metric tags. |
 | [**`sampler`**][docs.sampler_transform] | Accepts [`log`][docs.log_event] events and allows you to sample events with a configurable rate. |
-| [**`tokenizer`**][docs.tokenizer_transform] | Accepts [`log`][docs.log_event] events and allows you to tokenize a field's value by splitting on white space, ignoring special wrapping characters, and zipping the tokens into ordered field names. |
+| [**`tokenizer`**][docs.tokenizer_transform] | Accepts [`log`][docs.log_event] events and allows you to tokenize a log field's value by splitting on white space, ignoring special wrapping characters, and zipping the tokens into ordered field names. |
 
 [+ request a new transform][url.new_transform]
 
@@ -151,6 +152,7 @@ Or view [platform specific installation instructions][docs.installation].
 | [**`clickhouse`**][docs.clickhouse_sink] | [Batches](#buffers-and-batches) [`log`][docs.log_event] events to [Clickhouse][url.clickhouse] via the [`HTTP` Interface][url.clickhouse_http]. |
 | [**`console`**][docs.console_sink] | [Streams](#streaming) [`log`][docs.log_event] and [`metric`][docs.metric_event] events to the console, `STDOUT` or `STDERR`. |
 | [**`elasticsearch`**][docs.elasticsearch_sink] | [Batches](#buffers-and-batches) [`log`][docs.log_event] events to [Elasticsearch][url.elasticsearch] via the [`_bulk` API endpoint](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html). |
+| [**`file`**][docs.file_sink] | [Streams](#streaming) [`log`][docs.log_event] events to a file. |
 | [**`http`**][docs.http_sink] | [Batches](#buffers-and-batches) [`log`][docs.log_event] events to a generic HTTP endpoint. |
 | [**`kafka`**][docs.kafka_sink] | [Streams](#streaming) [`log`][docs.log_event] events to [Apache Kafka][url.kafka] via the [Kafka protocol][url.kafka_protocol]. |
 | [**`prometheus`**][docs.prometheus_sink] | [Exposes](#exposing-and-scraping) [`metric`][docs.metric_event] events to [Prometheus][url.prometheus] metrics service. |
@@ -159,13 +161,6 @@ Or view [platform specific installation instructions][docs.installation].
 | [**`vector`**][docs.vector_sink] | [Streams](#streaming) [`log`][docs.log_event] events to another downstream Vector instance. |
 
 [+ request a new sink][url.new_sink]
-
-
-## Companies Using Vector In Production
-
-* [Timber](https://timber.io)
-
-[+ add your company][url.add_company]
 
 
 ## License
@@ -192,6 +187,7 @@ the License.
 
 
 [docs.add_fields_transform]: https://docs.vector.dev/usage/configuration/transforms/add_fields
+[docs.add_tags_transform]: https://docs.vector.dev/usage/configuration/transforms/add_tags
 [docs.administration]: https://docs.vector.dev/usage/administration
 [docs.agent_role]: https://docs.vector.dev/setup/deployment/roles/agent
 [docs.apt]: https://docs.vector.dev/setup/installation/package-managers/apt
@@ -211,6 +207,7 @@ the License.
 [docs.docker]: https://docs.vector.dev/setup/installation/platforms/docker
 [docs.elasticsearch_sink]: https://docs.vector.dev/usage/configuration/sinks/elasticsearch
 [docs.field_filter_transform]: https://docs.vector.dev/usage/configuration/transforms/field_filter
+[docs.file_sink]: https://docs.vector.dev/usage/configuration/sinks/file
 [docs.file_source]: https://docs.vector.dev/usage/configuration/sources/file
 [docs.getting_started]: https://docs.vector.dev/setup/getting-started
 [docs.grok_parser_transform]: https://docs.vector.dev/usage/configuration/transforms/grok_parser
@@ -235,6 +232,7 @@ the License.
 [docs.regex_parser_transform]: https://docs.vector.dev/usage/configuration/transforms/regex_parser
 [docs.reloading]: https://docs.vector.dev/usage/administration/reloading
 [docs.remove_fields_transform]: https://docs.vector.dev/usage/configuration/transforms/remove_fields
+[docs.remove_tags_transform]: https://docs.vector.dev/usage/configuration/transforms/remove_tags
 [docs.roles]: https://docs.vector.dev/setup/deployment/roles
 [docs.sampler_transform]: https://docs.vector.dev/usage/configuration/transforms/sampler
 [docs.service_role]: https://docs.vector.dev/setup/deployment/roles/service
@@ -257,7 +255,6 @@ the License.
 [docs.vector_sink]: https://docs.vector.dev/usage/configuration/sinks/vector
 [docs.vector_source]: https://docs.vector.dev/usage/configuration/sources/vector
 [docs.yum]: https://docs.vector.dev/setup/installation/package-managers/yum
-[url.add_company]: https://github.com/timberio/vector/blob/master/.companies.toml
 [url.aws_cw_logs]: https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html
 [url.aws_kinesis_data_streams]: https://aws.amazon.com/kinesis/data-streams/
 [url.aws_s3]: https://aws.amazon.com/s3/
@@ -275,7 +272,7 @@ the License.
 [url.new_transform]: https://github.com/timberio/vector/issues/new?labels=Type%3A+New+Feature
 [url.prometheus]: https://prometheus.io/
 [url.regex]: https://en.wikipedia.org/wiki/Regular_expression
-[url.roadmap]: https://github.com/timberio/vector/milestones?direction=asc&sort=title&state=open
+[url.roadmap]: https://github.com/timberio/vector/milestones?direction=asc&sort=due_date&state=open
 [url.rust]: https://www.rust-lang.org/
 [url.splunk_hec]: http://dev.splunk.com/view/event-collector/SP-CAAAE6M
 [url.test_harness]: https://github.com/timberio/vector-test-harness/
