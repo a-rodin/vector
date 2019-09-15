@@ -7,7 +7,7 @@ use futures::{future, sync::mpsc, Future, Poll, Sink, Stream};
 use owning_ref::OwningHandle;
 use rdkafka::{
     config::ClientConfig,
-    consumer::{Consumer, DefaultConsumerContext, MessageStream, StreamConsumer},
+    consumer::{Consumer, DefaultConsumerContext, MessageStream, StreamConsumer, CommitMode},
     error::KafkaResult,
     message::{BorrowedMessage, Message},
 };
@@ -96,8 +96,8 @@ fn kafka_source(
                         }
 
                         consumer_ref
-                            .store_offset(&msg)
-                            .map_err(|e| error!(message = "Cannot store offset", error = ?e))?;
+                            .commit_message(&msg, CommitMode::Async)
+                            .map_err(|e| error!(message = "Cannot commit offset", error = ?e))?;
                         Ok(event)
                     }
                 }
