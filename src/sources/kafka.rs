@@ -96,7 +96,7 @@ fn kafka_source(
                         }
 
                         consumer_ref
-                            .commit_message(&msg, CommitMode::Async)
+                            .commit_message(&msg, CommitMode::Sync)
                             .map_err(|e| error!(message = "Cannot commit offset", error = ?e))?;
                         Ok(event)
                     }
