@@ -91,6 +91,9 @@ jobs:
       - run:
           name: Test
           command: cargo test --all --features docker -- --test-threads 4
+      - run:
+          name: Check for memory leaks in tests
+          command: make test-memory-leaks
       - store_test_results:
           path: ./test-results
 

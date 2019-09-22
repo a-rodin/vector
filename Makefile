@@ -57,6 +57,9 @@ test: ## Spins up Docker resources and runs _every_ test
 	@docker-compose up -d
 	@cargo test --all --features docker -- --test-threads 4
 
+test-memory-leaks: ## Checks for memory leaks in tests
+	@cargo with 'valgrind --undef-value-errors=no --leak-check=full --error-exitcode=1' -- test --lib vector -- --test-threads 1
+
 ##@ Releasing
 
 build-archive: ## Build a Vector archive for a given $TARGET and $VERSION
