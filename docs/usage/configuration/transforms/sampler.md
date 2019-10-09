@@ -104,6 +104,7 @@ issue, please:
 
 Finally, consider the following alternatives:
 
+* [`javascript` transform][docs.transforms.javascript]
 * [`lua` transform][docs.transforms.lua]
 
 ## Resources
@@ -116,6 +117,7 @@ Finally, consider the following alternatives:
 [docs.configuration#environment-variables]: ../../../usage/configuration#environment-variables
 [docs.data-model.log]: ../../../about/data-model/log.md
 [docs.monitoring#logs]: ../../../usage/administration/monitoring.md#logs
+[docs.transforms.javascript]: ../../../usage/configuration/transforms/javascript.md
 [docs.transforms.lua]: ../../../usage/configuration/transforms/lua.md
 [docs.troubleshooting]: ../../../usage/guides/troubleshooting.md
 [urls.new_sampler_transform_bug]: https://github.com/timberio/vector/issues/new?labels=transform%3A+sampler&labels=Type%3A+bug

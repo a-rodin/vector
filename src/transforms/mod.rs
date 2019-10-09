@@ -6,6 +6,7 @@ pub mod add_tags;
 pub mod coercer;
 pub mod field_filter;
 pub mod grok_parser;
+pub mod javascript;
 pub mod json_parser;
 pub mod log_to_metric;
 pub mod lua;

@@ -188,6 +188,7 @@ issue, please:
 
 Finally, consider the following alternatives:
 
+* [`javascript` transform][docs.transforms.javascript]
 * [`lua` transform][docs.transforms.lua]
 
 ## Resources
@@ -200,6 +201,7 @@ Finally, consider the following alternatives:
 [docs.configuration#environment-variables]: ../../../usage/configuration#environment-variables
 [docs.data-model.log]: ../../../about/data-model/log.md
 [docs.monitoring#logs]: ../../../usage/administration/monitoring.md#logs
+[docs.transforms.javascript]: ../../../usage/configuration/transforms/javascript.md
 [docs.transforms.lua]: ../../../usage/configuration/transforms/lua.md
 [docs.troubleshooting]: ../../../usage/guides/troubleshooting.md
 [urls.coercer_transform_bugs]: https://github.com/timberio/vector/issues?q=is%3Aopen+is%3Aissue+label%3A%22transform%3A+coercer%22+label%3A%22Type%3A+bug%22

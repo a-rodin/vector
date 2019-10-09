@@ -1,5 +1,6 @@
 use criterion::{criterion_group, Benchmark, Criterion};
 use indexmap::IndexMap;
+use transforms::javascript::JavaScript;
 use vector::{
     topology::config::TransformConfig,
     transforms::{self, Transform},
@@ -16,9 +17,11 @@ fn add_fields(c: &mut Criterion) {
     let value_bytes = value.into();
     let key_atom2 = key.into();
     let value_bytes2 = value.into();
+    let key_atom3 = key.into();
+    let value_bytes3 = value.into();
 
     c.bench(
-        "lua_add_fields",
+        "javascript_add_fields",
         Benchmark::new("native", move |b| {
             b.iter_with_setup(
                 || {
@@ -35,17 +38,42 @@ fn add_fields(c: &mut Criterion) {
                 },
             )
         })
-        .with_function("lua", move |b| {
+        .with_function("javascript_with_copying", move |b| {
             b.iter_with_setup(
                 || {
-                    let source = format!("event['{}'] = '{}'", key, value);
-                    transforms::lua::Lua::new(&source, vec![]).unwrap()
+                    let config = format!(
+                        r#"
+                        source = "event => ({{...event, ['{}']: '{}'}})"
+                        "#,
+                        key, value
+                    );
+                    JavaScript::new(toml::from_str(&config).unwrap()).unwrap()
                 },
                 |mut transform| {
                     for _ in 0..num_events {
                         let event = Event::new_empty_log();
                         let event = transform.transform(event).unwrap();
                         assert_eq!(event.as_log()[&key_atom2], value_bytes2);
+                    }
+                },
+            )
+        })
+        .with_function("javascript_without_copying", move |b| {
+            b.iter_with_setup(
+                || {
+                    let config = format!(
+                        r#"
+                        source = "event => {{ event['{}'] = '{}'; return event }}"
+                        "#,
+                        key, value
+                    );
+                    JavaScript::new(toml::from_str(&config).unwrap()).unwrap()
+                },
+                |mut transform| {
+                    for _ in 0..num_events {
+                        let event = Event::new_empty_log();
+                        let event = transform.transform(event).unwrap();
+                        assert_eq!(event.as_log()[&key_atom3], value_bytes3);
                     }
                 },
             )
@@ -58,7 +86,7 @@ fn field_filter(c: &mut Criterion) {
     let num_events: usize = 100_000;
 
     c.bench(
-        "lua_field_filter",
+        "javascript_field_filter",
         Benchmark::new("native", move |b| {
             b.iter_with_setup(
                 || {
@@ -89,15 +117,13 @@ fn field_filter(c: &mut Criterion) {
                 },
             )
         })
-        .with_function("lua", move |b| {
+        .with_function("javascript", move |b| {
             b.iter_with_setup(
                 || {
-                    let source = r#"
-                      if event["the_field"] ~= "0" then
-                        event = nil
-                      end
+                    let config = r#"
+                    source = "event => (event.the_field !== '0') ? null : event"
                     "#;
-                    let transform = transforms::lua::Lua::new(&source, vec![]).unwrap();
+                    let transform = JavaScript::new(toml::from_str(config).unwrap()).unwrap();
 
                     let events: Vec<Event> = (0..num_events)
                         .map(|i| {
@@ -108,7 +134,6 @@ fn field_filter(c: &mut Criterion) {
                             event
                         })
                         .collect();
-
                     (transform, events)
                 },
                 |(mut transform, events)| {
@@ -124,4 +149,4 @@ fn field_filter(c: &mut Criterion) {
     );
 }
 
-criterion_group!(lua, add_fields, field_filter);
+criterion_group!(javascript, add_fields, field_filter);

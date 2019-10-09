@@ -219,6 +219,7 @@ issue, please:
 Finally, consider the following alternatives:
 
 * [`grok_parser` transform][docs.transforms.grok_parser]
+* [`javascript` transform][docs.transforms.javascript]
 * [`lua` transform][docs.transforms.lua]
 * [`regex_parser` transform][docs.transforms.regex_parser]
 * [`split` transform][docs.transforms.split]
@@ -234,6 +235,7 @@ Finally, consider the following alternatives:
 [docs.data-model.log]: ../../../about/data-model/log.md
 [docs.monitoring#logs]: ../../../usage/administration/monitoring.md#logs
 [docs.transforms.grok_parser]: ../../../usage/configuration/transforms/grok_parser.md
+[docs.transforms.javascript]: ../../../usage/configuration/transforms/javascript.md
 [docs.transforms.lua]: ../../../usage/configuration/transforms/lua.md
 [docs.transforms.regex_parser]: ../../../usage/configuration/transforms/regex_parser.md
 [docs.transforms.split]: ../../../usage/configuration/transforms/split.md

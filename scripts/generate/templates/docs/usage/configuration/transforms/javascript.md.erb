@@ -1,0 +1,131 @@
+<% component = metadata.transforms.javascript %>
+
+<%= component_header(component) %>
+
+## Data types correspondence
+
+There is a one-to-one correspondence between each Vector's data type and a JavaScript type:
+
+| Vector datatype | JavaScript datatype | Note |
+|-----------------+---------------------+------|
+| `Bytes`         | `String`            | Bytes sequences that are not valid UTF-8 are converted to UTF-8 in a lossy way |
+| `Integer`       | [`BigInt`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/BigInt)  | Attempt to return from JavaScript BigInt that is not between -2^63..2^63-1 will result in an error |
+| `Float`         | `Number`            | Integers of form `123` without decimal point have type `Number` in JavaScript and will be convertd to `Float` when returned from JavaScript |
+| `Boolean`       | `Boolean`           |      |
+| `Timestamp`     | `Date`              | JavaScript dates precision is 1 millisecond, while Vector timestamps precision is 1 nanosecond |
+
+## Config File
+
+<%= component_config_example(component) %>
+
+## Options
+
+<%= options_table(component.options.to_h.values.sort) %>
+
+## Examples
+
+{% tabs %}
+{% tab title="Add fields" %}
+Add a root field to an event. Supply this as the `source` value:
+
+```js
+event => ({...event, field: 'value'})
+```
+
+Add a nested field to an event. Supply this as the `source` value:
+
+```js
+event => ({...event, ['nested.field']: 'value})
+```
+
+{% endtab %}
+{% tab title="Remove fields" %}
+Remove a field from an event. Supply this as the `source` value:
+
+```js
+event => ({...event, field: null})
+```
+
+Remove a nested field from an event. Supply this as the `source` value:
+
+```js
+event => ({...event, ['nested.field']: null})
+```
+{% endtab %}
+
+{% tab title="Drop event" %}
+Drop an event entirely. Supply this as the `source` value:
+
+```js
+event => null
+```
+{% endtab %}
+
+{% tab title="Generate multiple events" %}
+Generate multiple events from a single event. Supply this as the `source` value:
+
+```js
+event => [{...event, field1: 'value1'}, {...event, field2: 'value2'}]
+```
+{% endtab %}
+
+{% tab title="Set event timestamp" %}
+Extract date encoded as UNIX timestamp from the message and set event timestamp from it.
+Supply this as the `source` value:
+
+```js
+event => {
+    const {created_at} = JSON.stringify(event.message)
+    event.timestamp = new Date(created_at * 1000)
+    return event
+}
+```
+{% endtab %}
+
+{% tab title="Keep state between events" %}
+Keep variables between processing subsequent events. These variables are recreated
+if Vector is restarted.
+
+Supply this as the `source` value:
+
+```js
+let count = 0
+const handler = event => ({...event, count: ++count})
+```
+
+and set value of `handler` parameter to `handler`.
+{% endtab %}
+
+{% endtabs %}
+
+## How It Works [[sort]]
+
+<%= component_sections(component) %>
+
+Vector uses [QuickJS](https://bellard.org/quickjs/quickjs.html) embedded
+JavaScript engine for scripted transformations of the events. It implements
+ECMAScript 2019 and parts of ECMAScript 2020.
+
+Transformations are done using _handlers_. Handler is a user-defined
+JavaScript function that takes one event object as input and outputs either of:
+
+* Event: a JavaScript object with values of types `Boolean`, `Number`, `String`, or `Date`.
+  If you need nested objects, use dot-separated key values, for example `a.b.c`.
+* Null: if handler returns `null`, the event is discarded.
+* Array: an array of event objects.
+
+The handler code is specified in the `source` field of the transform config. If `handler`
+parameter of the config is not specified, entire source should be a single function.
+
+If `handler` parameter is specified, the source should contain a definition of the handler
+function with the same name as the value of `handler`. In addition, the source can contain
+other top-level functions, variables, constants, or classes. The value of `handler`
+should consist of ASCII characters and be a valid JavaScript identifier.
+
+## Troubleshooting
+
+<%= component_troubleshooting(component) %>
+
+## Resources
+
+<%= component_resources(component) %>

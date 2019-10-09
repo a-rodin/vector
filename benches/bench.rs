@@ -17,6 +17,7 @@ mod buffering;
 mod event;
 mod files;
 mod http;
+mod javascript;
 mod lua;
 
 criterion_group!(
@@ -38,6 +39,7 @@ criterion_main!(
     batch::batch,
     files::files,
     lua::lua,
+    javascript::javascript,
     event::event
 );
 

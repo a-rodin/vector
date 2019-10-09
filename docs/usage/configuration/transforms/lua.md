@@ -202,6 +202,7 @@ issue, please:
 
 Finally, consider the following alternatives:
 
+* [`javascript` transform][docs.transforms.javascript]
 * [`lua` transform][docs.transforms.lua]
 
 ## Resources
@@ -217,6 +218,7 @@ Finally, consider the following alternatives:
 [docs.data-model.log]: ../../../about/data-model/log.md
 [docs.data_model]: ../../../about/data-model
 [docs.monitoring#logs]: ../../../usage/administration/monitoring.md#logs
+[docs.transforms.javascript]: ../../../usage/configuration/transforms/javascript.md
 [docs.transforms.lua]: ../../../usage/configuration/transforms/lua.md
 [docs.troubleshooting]: ../../../usage/guides/troubleshooting.md
 [urls.lua]: https://www.lua.org/

@@ -131,6 +131,7 @@ Or view [platform specific installation instructions][docs.installation].
 | [**`coercer`**][docs.transforms.coercer] | Accepts [`log`][docs.data-model.log] events and allows you to coerce log fields into fixed types. |
 | [**`field_filter`**][docs.transforms.field_filter] | Accepts [`log`][docs.data-model.log] and [`metric`][docs.data-model.metric] events and allows you to filter events by a log field's value. |
 | [**`grok_parser`**][docs.transforms.grok_parser] | Accepts [`log`][docs.data-model.log] events and allows you to parse a log field value with [Grok][urls.grok]. |
+| [**`javascript`**][docs.transforms.javascript] | Accepts [`log`][docs.data-model.log] events and allows you to transform events with a full embedded JavaScript engine. |
 | [**`json_parser`**][docs.transforms.json_parser] | Accepts [`log`][docs.data-model.log] events and allows you to parse a log field value as JSON. |
 | [**`log_to_metric`**][docs.transforms.log_to_metric] | Accepts [`log`][docs.data-model.log] events and allows you to convert logs into one or more metrics. |
 | [**`lua`**][docs.transforms.lua] | Accepts [`log`][docs.data-model.log] events and allows you to transform events with a full embedded [Lua][urls.lua] engine. |
@@ -250,6 +251,7 @@ the License.
 [docs.transforms.coercer]: https://docs.vector.dev/usage/configuration/transforms/coercer
 [docs.transforms.field_filter]: https://docs.vector.dev/usage/configuration/transforms/field_filter
 [docs.transforms.grok_parser]: https://docs.vector.dev/usage/configuration/transforms/grok_parser
+[docs.transforms.javascript]: https://docs.vector.dev/usage/configuration/transforms/javascript
 [docs.transforms.json_parser]: https://docs.vector.dev/usage/configuration/transforms/json_parser
 [docs.transforms.log_to_metric]: https://docs.vector.dev/usage/configuration/transforms/log_to_metric
 [docs.transforms.lua]: https://docs.vector.dev/usage/configuration/transforms/lua

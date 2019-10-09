@@ -276,6 +276,7 @@ issue, please:
 Finally, consider the following alternatives:
 
 * [`grok_parser` transform][docs.transforms.grok_parser]
+* [`javascript` transform][docs.transforms.javascript]
 * [`lua` transform][docs.transforms.lua]
 * [`split` transform][docs.transforms.split]
 * [`tokenizer` transform][docs.transforms.tokenizer]
@@ -294,6 +295,7 @@ Finally, consider the following alternatives:
 [docs.monitoring#logs]: ../../../usage/administration/monitoring.md#logs
 [docs.performance]: ../../../performance.md
 [docs.transforms.grok_parser]: ../../../usage/configuration/transforms/grok_parser.md
+[docs.transforms.javascript]: ../../../usage/configuration/transforms/javascript.md
 [docs.transforms.lua]: ../../../usage/configuration/transforms/lua.md
 [docs.transforms.split]: ../../../usage/configuration/transforms/split.md
 [docs.transforms.tokenizer]: ../../../usage/configuration/transforms/tokenizer.md

@@ -66,6 +66,7 @@
     * [coercer transform][docs.transforms.coercer]
     * [field_filter transform][docs.transforms.field_filter]
     * [grok_parser transform][docs.transforms.grok_parser]
+    * [javascript transform][docs.transforms.javascript]
     * [json_parser transform][docs.transforms.json_parser]
     * [log_to_metric transform][docs.transforms.log_to_metric]
     * [lua transform][docs.transforms.lua]
@@ -199,6 +200,7 @@
 [docs.transforms.coercer]: ./usage/configuration/transforms/coercer.md
 [docs.transforms.field_filter]: ./usage/configuration/transforms/field_filter.md
 [docs.transforms.grok_parser]: ./usage/configuration/transforms/grok_parser.md
+[docs.transforms.javascript]: ./usage/configuration/transforms/javascript.md
 [docs.transforms.json_parser]: ./usage/configuration/transforms/json_parser.md
 [docs.transforms.log_to_metric]: ./usage/configuration/transforms/log_to_metric.md
 [docs.transforms.lua]: ./usage/configuration/transforms/lua.md

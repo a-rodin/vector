@@ -25,6 +25,7 @@ in-between [sources][docs.sources] and [sinks][docs.sinks]. They transform
 | [**`coercer`**][docs.transforms.coercer] | Accepts [`log`][docs.data-model.log] events and allows you to coerce log fields into fixed types. |
 | [**`field_filter`**][docs.transforms.field_filter] | Accepts [`log`][docs.data-model.log] and [`metric`][docs.data-model.metric] events and allows you to filter events by a log field's value. |
 | [**`grok_parser`**][docs.transforms.grok_parser] | Accepts [`log`][docs.data-model.log] events and allows you to parse a log field value with [Grok][urls.grok]. |
+| [**`javascript`**][docs.transforms.javascript] | Accepts [`log`][docs.data-model.log] events and allows you to transform events with a full embedded JavaScript engine. |
 | [**`json_parser`**][docs.transforms.json_parser] | Accepts [`log`][docs.data-model.log] events and allows you to parse a log field value as JSON. |
 | [**`log_to_metric`**][docs.transforms.log_to_metric] | Accepts [`log`][docs.data-model.log] events and allows you to convert logs into one or more metrics. |
 | [**`lua`**][docs.transforms.lua] | Accepts [`log`][docs.data-model.log] events and allows you to transform events with a full embedded [Lua][urls.lua] engine. |
@@ -50,6 +51,7 @@ in-between [sources][docs.sources] and [sinks][docs.sinks]. They transform
 [docs.transforms.coercer]: ../../../usage/configuration/transforms/coercer.md
 [docs.transforms.field_filter]: ../../../usage/configuration/transforms/field_filter.md
 [docs.transforms.grok_parser]: ../../../usage/configuration/transforms/grok_parser.md
+[docs.transforms.javascript]: ../../../usage/configuration/transforms/javascript.md
 [docs.transforms.json_parser]: ../../../usage/configuration/transforms/json_parser.md
 [docs.transforms.log_to_metric]: ../../../usage/configuration/transforms/log_to_metric.md
 [docs.transforms.lua]: ../../../usage/configuration/transforms/lua.md
