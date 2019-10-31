@@ -2,25 +2,53 @@ use crate::buffers::Acker;
 use crate::{
     event::{self, Event, LogEvent, ValueKind},
     region::RegionOrEndpoint,
-    sinks::util::{BatchServiceSink, SinkExt},
+    sinks::util::{BatchServiceSink, PartitionBuffer, PartitionInnerBuffer, SinkExt},
 };
-use futures::{sync::oneshot, try_ready, Async, Future, Poll};
+use bytes::Bytes;
+use futures::{stream::iter_ok, sync::oneshot, try_ready, Async, Future, Poll, Sink};
 use rusoto_core::RusotoFuture;
 use rusoto_logs::{
-    CloudWatchLogs, CloudWatchLogsClient, DescribeLogStreamsError, DescribeLogStreamsRequest,
+    CloudWatchLogs, CloudWatchLogsClient, CreateLogStreamError, CreateLogStreamRequest,
+    DescribeLogGroupsRequest, DescribeLogStreamsError, DescribeLogStreamsRequest,
     DescribeLogStreamsResponse, InputLogEvent, PutLogEventsError, PutLogEventsRequest,
     PutLogEventsResponse,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt;
 use std::time::Duration;
-use tower::{Service, ServiceBuilder};
+use string_cache::DefaultAtom as Atom;
+use tokio_trace::field;
+use tower::{
+    buffer::Buffer,
+    limit::{
+        concurrency::ConcurrencyLimit,
+        rate::{Rate, RateLimit},
+    },
+    timeout::Timeout,
+    Service, ServiceExt,
+};
 
 pub struct CloudwatchLogsSvc {
     client: CloudWatchLogsClient,
     state: State,
+    encoding: Option<Encoding>,
+    stream_name: String,
+    group_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum Partition {
+    Static(Bytes),
+    Event(Atom),
+}
+
+type Svc = Buffer<ConcurrencyLimit<RateLimit<Timeout<CloudwatchLogsSvc>>>, Vec<Event>>;
+
+pub struct CloudwatchLogsPartitionSvc {
     config: CloudwatchLogsSinkConfig,
+    clients: HashMap<CloudwatchKey, Svc>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
@@ -50,6 +78,7 @@ pub enum Encoding {
 enum State {
     Idle,
     Token(Option<String>),
+    CreateStream(RusotoFuture<(), CreateLogStreamError>),
     Describe(RusotoFuture<DescribeLogStreamsResponse, DescribeLogStreamsError>),
     Put(oneshot::Receiver<PutLogEventsResponse>),
 }
@@ -58,35 +87,31 @@ enum State {
 pub enum CloudwatchError {
     Put(PutLogEventsError),
     Describe(DescribeLogStreamsError),
+    CreateStream(CreateLogStreamError),
     NoStreamsFound,
     ServiceDropped,
+    MakeService,
 }
 
 #[typetag::serde(name = "aws_cloudwatch_logs")]
 impl crate::topology::config::SinkConfig for CloudwatchLogsSinkConfig {
     fn build(&self, acker: Acker) -> Result<(super::RouterSink, super::Healthcheck), String> {
-        let cloudwatch = CloudwatchLogsSvc::new(self.clone())?;
-
-        let timeout = self.request_timeout_secs.unwrap_or(60);
-        let in_flight_limit = self.request_in_flight_limit.unwrap_or(5);
-        let rate_limit_duration = self.request_rate_limit_duration_secs.unwrap_or(1);
-        let rate_limit_num = self.request_rate_limit_num.unwrap_or(5);
+        let svc = CloudwatchLogsPartitionSvc::new(self.clone())?;
 
         let batch_timeout = self.batch_timeout.unwrap_or(1);
-        let batch_size = self.batch_size.unwrap_or(bytesize::mib(1u64) as usize);
+        let batch_size = self.batch_size.unwrap_or(1000);
 
-        let svc = ServiceBuilder::new()
-            .concurrency_limit(in_flight_limit)
-            .rate_limit(rate_limit_num, Duration::from_secs(rate_limit_duration))
-            .timeout(Duration::from_secs(timeout))
-            .service(cloudwatch);
+        let log_group = self.group_name.clone().into();
+        let log_stream = interpolate(&self.stream_name);
 
         let sink = {
-            let svc_sink = BatchServiceSink::new(svc, acker).batched_with_min(
-                Vec::new(),
-                batch_size,
-                Duration::from_secs(batch_timeout),
-            );
+            let svc_sink = BatchServiceSink::new(svc, acker)
+                .partitioned_batched_with_min(
+                    PartitionBuffer::new(Vec::new()),
+                    batch_size,
+                    Duration::from_secs(batch_timeout),
+                )
+                .with_flat_map(move |event| partition(event, &log_group, &log_stream));
             Box::new(svc_sink)
         };
 
@@ -96,14 +121,74 @@ impl crate::topology::config::SinkConfig for CloudwatchLogsSinkConfig {
     }
 }
 
-impl CloudwatchLogsSvc {
+impl CloudwatchLogsPartitionSvc {
     pub fn new(config: CloudwatchLogsSinkConfig) -> Result<Self, String> {
+        Ok(Self {
+            config,
+            clients: HashMap::new(),
+        })
+    }
+}
+
+impl Service<PartitionInnerBuffer<Vec<Event>, CloudwatchKey>> for CloudwatchLogsPartitionSvc {
+    type Response = ();
+    type Error = Box<std::error::Error + Send + Sync + 'static>;
+    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error> + Send + 'static>;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        Ok(().into())
+    }
+
+    fn call(&mut self, req: PartitionInnerBuffer<Vec<Event>, CloudwatchKey>) -> Self::Future {
+        let (events, key) = req.into_parts();
+
+        let timeout = self.config.request_timeout_secs.unwrap_or(60);
+        let in_flight_limit = self.config.request_in_flight_limit.unwrap_or(5);
+        let rate_limit_duration = self.config.request_rate_limit_duration_secs.unwrap_or(1);
+        let rate_limit_num = self.config.request_rate_limit_num.unwrap_or(5);
+
+        let svc = if let Some(svc) = &mut self.clients.get_mut(&key) {
+            svc.clone()
+        } else {
+            let svc = {
+                let cloudwatch = CloudwatchLogsSvc::new(&self.config).unwrap();
+                let timeout = Timeout::new(cloudwatch, Duration::from_secs(timeout));
+
+                // TODO: add Buffer/Retry here
+
+                let rate = RateLimit::new(
+                    timeout,
+                    Rate::new(rate_limit_num, Duration::from_secs(rate_limit_duration)),
+                );
+                let concurrency = ConcurrencyLimit::new(rate, in_flight_limit);
+
+                Buffer::new(concurrency, 5)
+            };
+
+            self.clients.insert(key, svc.clone());
+            svc
+        };
+
+        let fut = svc
+            .ready()
+            .map_err(Into::into)
+            .and_then(move |mut svc| svc.call(events))
+            .map_err(Into::into);
+
+        Box::new(fut)
+    }
+}
+
+impl CloudwatchLogsSvc {
+    pub fn new(config: &CloudwatchLogsSinkConfig) -> Result<Self, String> {
         let region = config.region.clone().try_into()?;
         let client = CloudWatchLogsClient::new(region);
 
         Ok(CloudwatchLogsSvc {
             client,
-            config,
+            encoding: config.encoding.clone(),
+            stream_name: config.stream_name.clone(),
+            group_name: config.group_name.clone(),
             state: State::Idle,
         })
     }
@@ -122,8 +207,8 @@ impl CloudwatchLogsSvc {
         let request = PutLogEventsRequest {
             log_events,
             sequence_token,
-            log_group_name: self.config.group_name.clone(),
-            log_stream_name: self.config.stream_name.clone(),
+            log_group_name: self.group_name.clone(),
+            log_stream_name: self.stream_name.clone(),
         };
 
         self.client.put_log_events(request)
@@ -134,12 +219,21 @@ impl CloudwatchLogsSvc {
     ) -> RusotoFuture<DescribeLogStreamsResponse, DescribeLogStreamsError> {
         let request = DescribeLogStreamsRequest {
             limit: Some(1),
-            log_group_name: self.config.group_name.clone(),
-            log_stream_name_prefix: Some(self.config.stream_name.clone()),
+            log_group_name: self.group_name.clone(),
+            log_stream_name_prefix: Some(self.stream_name.clone()),
             ..Default::default()
         };
 
         self.client.describe_log_streams(request)
+    }
+
+    fn create_log_stream(&mut self) -> RusotoFuture<(), CreateLogStreamError> {
+        let request = CreateLogStreamRequest {
+            log_group_name: self.group_name.clone(),
+            log_stream_name: self.stream_name.clone(),
+        };
+
+        self.client.create_log_stream(request)
     }
 
     pub fn encode_log(&self, mut log: LogEvent) -> InputLogEvent {
@@ -149,7 +243,7 @@ impl CloudwatchLogsSvc {
             chrono::Utc::now().timestamp_millis()
         };
 
-        match (&self.config.encoding, log.is_structured()) {
+        match (&self.encoding, log.is_structured()) {
             (&Some(Encoding::Json), _) | (_, true) => {
                 let bytes = serde_json::to_vec(&log.all_fields()).unwrap();
                 let message = String::from_utf8(bytes).unwrap();
@@ -183,15 +277,26 @@ impl Service<Vec<Event>> for CloudwatchLogsSvc {
                 State::Describe(fut) => {
                     let response = try_ready!(fut.poll().map_err(CloudwatchError::Describe));
 
-                    let stream = response
+                    let stream = if let Some(stream) = response
                         .log_streams
                         .ok_or(CloudwatchError::NoStreamsFound)?
                         .into_iter()
                         .next()
-                        .ok_or(CloudwatchError::NoStreamsFound)?;
+                    {
+                        stream
+                    } else {
+                        let fut = self.create_log_stream();
+                        self.state = State::CreateStream(fut);
+                        continue;
+                    };
 
                     self.state = State::Token(stream.upload_sequence_token);
                     return Ok(Async::Ready(()));
+                }
+                State::CreateStream(fut) => {
+                    let _ = try_ready!(fut.poll().map_err(CloudwatchError::CreateStream));
+                    self.state = State::Idle;
+                    continue;
                 }
                 State::Token(_) => return Ok(Async::Ready(())),
                 State::Put(fut) => {
@@ -215,6 +320,7 @@ impl Service<Vec<Event>> for CloudwatchLogsSvc {
                 let (tx, rx) = oneshot::channel();
                 self.state = State::Put(rx);
 
+                debug!(message = "Submitting events.", amount_of_events = req.len());
                 let fut = self
                     .put_logs(token, req)
                     .map_err(CloudwatchError::Put)
@@ -227,47 +333,93 @@ impl Service<Vec<Event>> for CloudwatchLogsSvc {
     }
 }
 
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct CloudwatchKey {
+    group: Bytes,
+    stream: Bytes,
+}
+
+fn interpolate(s: &str) -> Partition {
+    use regex::Regex;
+    let r = Regex::new(r"\{event\.(?P<key>\D+)\}").unwrap();
+
+    if let Some(cap) = r.captures(s) {
+        if let Some(m) = cap.name("key") {
+            return Partition::Event(m.as_str().into());
+        }
+    }
+
+    Partition::Static(s.into())
+}
+
+fn partition(
+    event: Event,
+    group: &Bytes,
+    stream: &Partition,
+) -> impl futures::Stream<Item = PartitionInnerBuffer<Event, CloudwatchKey>, Error = ()> {
+    let stream = match stream {
+        Partition::Static(g) => g.clone(),
+        Partition::Event(key) => {
+            if let Some(val) = event.as_log().get(&key) {
+                val.as_bytes().clone()
+            } else {
+                warn!(
+                    message =
+                        "Event key does not exist on the event and the event will be dropped.",
+                    key = field::debug(key)
+                );
+                return iter_ok(vec![]);
+            }
+        }
+    };
+
+    let key = CloudwatchKey {
+        stream,
+        group: group.clone(),
+    };
+
+    iter_ok(vec![PartitionInnerBuffer::new(event, key)])
+}
+
 fn healthcheck(config: CloudwatchLogsSinkConfig) -> Result<super::Healthcheck, String> {
     let region = config.region.clone();
 
     let client = CloudWatchLogsClient::new(region.try_into()?);
 
-    let request = DescribeLogStreamsRequest {
+    let request = DescribeLogGroupsRequest {
         limit: Some(1),
-        log_group_name: config.group_name.clone(),
-        log_stream_name_prefix: Some(config.stream_name.clone()),
+        log_group_name_prefix: config.group_name.clone().into(),
         ..Default::default()
     };
 
-    let expected_stream = config.stream_name.clone();
+    let expected_group_name = config.group_name.clone();
 
+    // This will attempt to find the group name passed in and verify that
+    // it matches the one that AWS sends back.
     let fut = client
-        .describe_log_streams(request)
+        .describe_log_groups(request)
         .map_err(|e| format!("DescribeLogStreams failed: {}", e))
         .and_then(|response| {
             response
-                .log_streams
-                .ok_or_else(|| "No streams found".to_owned())
+                .log_groups
+                .ok_or_else(|| "No log group found".to_string())
         })
-        .and_then(|streams| {
-            streams
-                .into_iter()
-                .next()
-                .ok_or_else(|| "No streams found".to_owned())
-        })
-        .and_then(|stream| {
-            stream
-                .log_stream_name
-                .ok_or_else(|| "No stream name found but found a stream".to_owned())
-        })
-        .and_then(move |stream_name| {
-            if stream_name == expected_stream {
-                Ok(())
+        .and_then(move |groups| {
+            if let Some(group) = groups.into_iter().next() {
+                if let Some(name) = group.log_group_name {
+                    if name == expected_group_name {
+                        Ok(())
+                    } else {
+                        Err(format!(
+                            "Group name mismatch: Expected {}, found {}",
+                            expected_group_name, name
+                        ))
+                    }
+                } else {
+                    Err("Unable to extract group name".to_string())
+                }
             } else {
-                Err(format!(
-                    "Stream returned is not the same as the one passed in got: {}, expected: {}",
-                    stream_name, expected_stream
-                ))
+                Err("No log group found".to_string())
             }
         });
 
@@ -279,10 +431,15 @@ impl fmt::Display for CloudwatchError {
         match self {
             CloudwatchError::Put(e) => write!(f, "CloudwatchError::Put: {}", e),
             CloudwatchError::Describe(e) => write!(f, "CloudwatchError::Describe: {}", e),
+            CloudwatchError::CreateStream(e) => write!(f, "CloudwatchError::CreateStream: {}", e),
             CloudwatchError::NoStreamsFound => write!(f, "CloudwatchError: No Streams Found"),
             CloudwatchError::ServiceDropped => write!(
                 f,
                 "CloudwatchError: The service was dropped while there was a request in flight."
+            ),
+            CloudwatchError::MakeService => write!(
+                f,
+                "CloudwatchError: The inner service was unable to be created."
             ),
         }
     }
@@ -304,13 +461,89 @@ impl From<DescribeLogStreamsError> for CloudwatchError {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{
         event::{self, Event, ValueKind},
         region::RegionOrEndpoint,
-        sinks::aws_cloudwatch_logs::{CloudwatchLogsSinkConfig, CloudwatchLogsSvc},
     };
+    use futures::Stream;
     use std::collections::HashMap;
     use string_cache::DefaultAtom as Atom;
+
+    #[test]
+    fn interpolate_event() {
+        let partition = interpolate("{event.some_key}");
+
+        assert_eq!(partition, Partition::Event("some_key".into()));
+    }
+
+    #[test]
+    fn interpolate_static() {
+        let partition = interpolate("static_key");
+
+        assert_eq!(partition, Partition::Static("static_key".into()));
+    }
+
+    #[test]
+    fn partition_static() {
+        let event = Event::from("hello world");
+        let stream = Partition::Static("stream".into());
+        let group = "group".into();
+
+        let (_event, key) = partition(event, &group, &stream)
+            .wait()
+            .into_iter()
+            .next()
+            .unwrap()
+            .unwrap()
+            .into_parts();
+
+        let expected = CloudwatchKey {
+            stream: "stream".into(),
+            group: "group".into(),
+        };
+
+        assert_eq!(key, expected)
+    }
+
+    #[test]
+    fn partition_event() {
+        let mut event = Event::from("hello world");
+
+        event
+            .as_mut_log()
+            .insert_implicit("log_stream".into(), "stream".into());
+
+        let stream = Partition::Event("log_stream".into());
+        let group = "group".into();
+
+        let (_event, key) = partition(event, &group, &stream)
+            .wait()
+            .into_iter()
+            .next()
+            .unwrap()
+            .unwrap()
+            .into_parts();
+
+        let expected = CloudwatchKey {
+            stream: "stream".into(),
+            group: "group".into(),
+        };
+
+        assert_eq!(key, expected)
+    }
+
+    #[test]
+    fn partition_no_key_event() {
+        let event = Event::from("hello world");
+
+        let stream = Partition::Event("log_stream".into());
+        let group = "group".into();
+
+        let stream_val = partition(event, &group, &stream).wait().into_iter().next();
+
+        assert!(stream_val.is_none());
+    }
 
     #[test]
     fn cloudwatch_encode_log() {
@@ -318,7 +551,7 @@ mod tests {
             region: RegionOrEndpoint::with_endpoint("http://localhost:6000".into()),
             ..Default::default()
         };
-        let svc = CloudwatchLogsSvc::new(config).unwrap();
+        let svc = CloudwatchLogsSvc::new(&config).unwrap();
 
         let mut event = Event::from("hello world").into_log();
 
@@ -345,19 +578,17 @@ mod tests {
 #[cfg(feature = "cloudwatch-integration-tests")]
 #[cfg(test)]
 mod integration_tests {
-
+    use super::*;
     use crate::buffers::Acker;
     use crate::{
         region::RegionOrEndpoint,
-        sinks::aws_cloudwatch_logs::CloudwatchLogsSinkConfig,
         test_util::{block_on, random_lines_with_stream},
         topology::config::SinkConfig,
     };
     use futures::Sink;
     use rusoto_core::Region;
     use rusoto_logs::{
-        CloudWatchLogs, CloudWatchLogsClient, CreateLogGroupRequest, CreateLogStreamRequest,
-        GetLogEventsRequest,
+        CloudWatchLogs, CloudWatchLogsClient, CreateLogGroupRequest, GetLogEventsRequest,
     };
 
     const STREAM_NAME: &'static str = "test-1";
@@ -369,7 +600,7 @@ mod integration_tests {
             name: "localstack".into(),
             endpoint: "http://localhost:6000".into(),
         };
-        ensure_stream(region.clone());
+        ensure_group(region.clone());
 
         let config = CloudwatchLogsSinkConfig {
             stream_name: STREAM_NAME.into(),
@@ -408,7 +639,25 @@ mod integration_tests {
         assert_eq!(output_lines, input_lines);
     }
 
-    fn ensure_stream(region: Region) {
+    #[test]
+    fn cloudwatch_healthcheck() {
+        let region = Region::Custom {
+            name: "localstack".into(),
+            endpoint: "http://localhost:6000".into(),
+        };
+        ensure_group(region);
+
+        let config = CloudwatchLogsSinkConfig {
+            stream_name: STREAM_NAME.into(),
+            group_name: GROUP_NAME.into(),
+            region: RegionOrEndpoint::with_endpoint("http://localhost:6000".into()),
+            ..Default::default()
+        };
+
+        block_on(healthcheck(config).unwrap()).unwrap();
+    }
+
+    fn ensure_group(region: Region) {
         let client = CloudWatchLogsClient::new(region);
 
         let req = CreateLogGroupRequest {
@@ -417,16 +666,6 @@ mod integration_tests {
         };
 
         match client.create_log_group(req).sync() {
-            Ok(_) => (),
-            Err(_) => (),
-        };
-
-        let req = CreateLogStreamRequest {
-            log_group_name: GROUP_NAME.into(),
-            log_stream_name: STREAM_NAME.into(),
-        };
-
-        match client.create_log_stream(req).sync() {
             Ok(_) => (),
             Err(_) => (),
         };
